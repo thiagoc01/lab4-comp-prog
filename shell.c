@@ -32,26 +32,7 @@ typedef struct job // Implementado como lista duplamente encadadeada circular
 
 job_t *processos = NULL;
 job_t *processos_bg = NULL;
-
-void print_listas()
-{
-	job_t *a = processos->proximo;
-
-	while(a != processos)
-	{
-		printf("%d %d %d %s \n", a->pid, a->jid, a->status, a->nome);
-		a = a->proximo;
-	}
-	a = processos_bg->proximo;
-	while(a != processos_bg)
-	{
-		printf("%d %d %d %s \n", a->pid, a->jid, a->status, a->nome);
-		a = a->proximo;
-	}
-}
-
-
-
+int tamanho_bg = 0;
 
 
 job_t *acha_processo(int jid)
@@ -85,6 +66,29 @@ job_t *acha_processo_bg(int jid)
 		return atual;
 }
 
+job_t *acha_processo_bg_overload(int jid, int *posicao)
+{
+	job_t *atual = processos_bg->proximo;
+	int pos = 0;
+
+	while (atual != processos_bg && atual->jid != jid)
+	{
+		pos++;
+		atual = atual->proximo;
+	}
+
+	if (atual->jid != jid)
+	{
+		*posicao = -1;
+		return NULL;
+	}
+	else
+	{
+		*posicao = pos;
+		return atual;
+	}
+}
+
 
 void insere_bg(job_t *novo)
 {
@@ -96,7 +100,7 @@ void insere_bg(job_t *novo)
 	processos_bg->anterior->proximo= copia;			
 	copia->proximo = processos_bg;
 	processos_bg->anterior = copia;
-	
+	tamanho_bg++;
 }
 
 void remove_job(int jid)
@@ -122,7 +126,8 @@ void remove_bg(int jid)
 	excluido->anterior->proximo = excluido->proximo;
 	excluido->proximo->anterior = excluido->anterior;
 	free(excluido);
-	
+	tamanho_bg--;
+
 }
 
 
@@ -145,6 +150,233 @@ job_t *adiciona_job(pid_t pid, char *nome)
 	return novo;
 }
 
+void printa_processo(int campos[], job_t * imprimir)
+{
+	if(campos[0] == 1)
+	{
+		printf("[%d]", imprimir->jid);
+		//imprimir sinal
+		if (acha_processo_bg(imprimir->jid) == processos_bg->anterior)
+			printf("+");
+
+		else if (acha_processo_bg(imprimir->jid) == processos_bg->anterior->anterior)
+			printf("-");
+
+		else
+			printf(" ");
+		printf("\t");
+	}
+
+	if(campos[1] == 1)
+	{
+		printf("%d\t", imprimir->pid);
+	}
+
+	if(campos[2] == 1)
+	{
+		if(imprimir->status == 0)
+			printf("Parado    \t");
+		else
+			printf("Executando\t");
+	}
+	if(campos[3] == 1)
+	{
+		printf("%s ",imprimir->nome);
+		if(imprimir->status == 2 || imprimir->status == 0)
+			printf("&");
+	}
+	printf("\n");
+}
+
+
+void printa_processos_geral(int campos[], int filtro_processos[], int num_processos[])
+{
+	job_t * atual = processos->proximo;
+
+	int contador = 0;
+
+	while(atual != processos)
+	{
+		if(filtro_processos[contador] == 1 && num_processos[contador] == 1)
+		{
+			printa_processo(campos, atual);
+		}
+		contador++;
+		atual = atual->proximo;
+	}
+}
+
+void printa_processo_especifico(int campos[], int filtro_processos[], job_t *atual, int pos)
+{
+
+	if(filtro_processos[pos] == 1)
+	{
+		printa_processo(campos, atual);
+	}
+
+}
+
+
+
+void jobs(char * argv[])
+{
+	int i = 1;
+
+	int campos[] = {1, 0, 1, 1};
+
+	int *num_processos = (int *) calloc(tamanho_bg, sizeof(int));
+
+	int *filtro_processos = (int *) malloc(sizeof(int) * tamanho_bg);
+
+	bool nums = false;
+
+	for (int a = 0 ; a < tamanho_bg ; a++)
+	{
+		filtro_processos[a] = 1;
+	}
+
+	while(argv[i] != NULL)
+	{
+		if (atoi(argv[i]) == 0)
+		{
+			//se argv nao é número, então é uma flag, logo argv[i][0] sempre será "-"
+			//	argv[i][0] = "-" argv[i] = " - l a r \0"
+			int j = 1;
+
+			while(argv[i][j] != 0)
+			{
+				char filtro = argv[i][j];
+
+				if (filtro == 'l')
+				{
+					 //assinala que todos os campos devem ser impressos
+					campos[0] = 1;
+					campos[1] = 1;
+					campos[2] = 1;
+					campos[3] = 1;
+				}
+				else if (filtro == 'p')
+				{
+					//assinala que APENAS o campo pid
+					campos[0] = 0;
+					campos[1] = 1;
+					campos[2] = 0;
+					campos[3] = 0;
+				}
+				else if (filtro == 'r')
+				{
+					int contador = 0;
+					job_t * atual = processos->proximo;
+					while(atual != processos)
+					{
+						if(atual->status != 2)
+							filtro_processos[contador] = 0;
+						else filtro_processos[contador] = 1;
+						contador++;
+						atual = atual->proximo;
+					}
+				}
+				else if (filtro == 's')
+				{
+					int contador = 0;
+					job_t * atual = processos->proximo;
+					while(atual != processos)
+					{
+						if (atual->status != 0)
+							filtro_processos[contador] = 0;
+						else filtro_processos[contador] = 1;
+						contador++;
+						atual = atual->proximo;
+					}
+				}
+
+				else if (!strcmp(argv[i],"--help"))
+				{
+					const char *ajuda = "jobs: jobs [-lprs] [ESPEC-JOB ...]\n"
+						    "	Exibe status de trabalhos.\n\n"
+						    
+						    "	Lista os trabalhos ativos. ESPEC-JOB restringe a saída àquele trabalho.\n"
+						    "	Não sendo informado qualquer opção, o status de todos os trabalhos\n"
+						    "	ativos é exibido.\n\n"
+
+						    "	Opções:\n"
+							     "	-l   	lista IDs de processo junto com a informação normal\n"							
+							     "	-p		lista apenas IDs de processo"
+							     "	-r		restringe a saída apenas a trabalhos em execução\n"
+							     "	-s		restringe a saída apenas a trabalhos parados\n"
+						   
+						    "	Status de saída:\n"
+						    "	Retorna sucesso, a menos que uma opção inválida seja fornecida ou\n"
+						    "	ocorra um erro.\n";
+
+					printf("%s\n", ajuda);
+					return;
+
+				}
+				else 
+				{
+					if(strlen(argv[i]) > 2)
+					{
+						printf("jobs: %c: opção inválida\n"
+							"jobs: uso: jobs [-lprs] [ESPEC-JOB ...].\n", filtro);
+					}
+					else
+						printf("jobs: %s: opção inválida\n"
+							"jobs: uso: jobs [-lprs] [ESPEC-JOB ...].\n", argv[i]);
+
+					free(filtro_processos);
+
+					return;
+				}
+				j++;
+			}
+			i++;
+		}
+		else
+			break;
+	}
+
+	if (argv[i] != NULL)
+	{
+		job_t *atual;
+		int aux;
+		int pos_num_processos;
+
+		while (argv[i] != NULL)
+		{
+			aux = atoi(argv[i]);
+			atual = acha_processo_bg_overload(aux, &pos_num_processos);
+
+			if ( atual == NULL)
+				printf("jobs: %d: trabalho não existe.\n", aux);
+			else
+			{
+				nums = true;
+				num_processos[pos_num_processos] = 1;
+				printa_processo_especifico(campos, filtro_processos, atual, pos_num_processos);
+
+			}
+
+			i++;
+
+		}
+		return;
+	}
+
+	else if (!nums)
+	{
+		for (int a = 0 ; a < tamanho_bg ; a++)
+		{
+			num_processos[a] = 1;
+		}
+
+		printa_processos_geral(campos, filtro_processos, num_processos);
+	
+	}
+
+
+}
+
 void bg(int *jid)
 {
 	if (processos->proximo == processos)
@@ -162,9 +394,11 @@ void bg(int *jid)
 
 	if (jid == NULL)
 	{
+		job_t *processo = acha_processo(processos_bg->anterior->jid);
 		job_t *ultimo = processos_bg->anterior;
 
 		ultimo->status = 2;
+		processo->status = 2;
 
 		kill(ultimo->pid, SIGCONT);
 
@@ -197,7 +431,10 @@ void bg(int *jid)
 			return;
 		}
 
+		job_t *processo = acha_processo(atual->jid);
+
 		atual->status = 2;
+		processo->status = 2;
 
 		kill(atual->pid, SIGCONT);
 
@@ -258,6 +495,10 @@ void fg(int *jid)
 
 		if (status == 5247)
 		{
+			job_t *processo = acha_processo(processos_bg->anterior->jid);
+
+			processo->status = 0;
+
 			job_t *contexto = (job_t *) malloc(sizeof(job_t));
 			memcpy(contexto,processos_bg->anterior, sizeof(job_t));
 			contexto->status = 0;
@@ -308,6 +549,10 @@ void fg(int *jid)
 
 		if (status == 5247)
 		{
+			job_t *processo = acha_processo(atual->jid);
+			
+			processo->status = 0;
+
 			job_t *contexto = (job_t *) malloc(sizeof(job_t));
 			memcpy(contexto,atual, sizeof(job_t));
 
@@ -469,9 +714,12 @@ int builtin_command(char **argv)
 		
 		return 1;
 	}
-	if(!strcmp(argv[0], "print"))
+
+	if(!strcmp(argv[0], "jobs"))
 	{
-		print_listas();
+
+		jobs(argv);
+		
 		return 1;
 	}
 
@@ -685,8 +933,6 @@ void eval(char *cmdline)
 
 
 }
-
-
 
 int main()
 {
